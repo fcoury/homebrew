@@ -1,66 +1,41 @@
-#  Copyright 2009 Max Howell and other contributors.
-#
-#  Redistribution and use in source and binary forms, with or without
-#  modification, are permitted provided that the following conditions
-#  are met:
-#
-#  1. Redistributions of source code must retain the above copyright
-#     notice, this list of conditions and the following disclaimer.
-#  2. Redistributions in binary form must reproduce the above copyright
-#     notice, this list of conditions and the following disclaimer in the
-#     documentation and/or other materials provided with the distribution.
-#
-#  THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
-#  IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-#  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
-#  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
-#  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
-#  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-#  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-#  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-#  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
-#  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-#
-
 module HomebrewEnvExtension
   # -w: keep signal to noise high
   SAFE_CFLAGS_FLAGS = "-w -pipe"
 
   def setup_build_environment
     # Clear CDPATH to avoid make issues that depend on changing directories
-    ENV.delete('CDPATH')
-    ENV.delete('CPPFLAGS')
-    ENV.delete('LDFLAGS')
-    ENV.delete('CC')
-    ENV.delete('CXX')
+    delete('CDPATH')
+    delete('CPPFLAGS')
+    delete('LDFLAGS')
 
-    ENV['MAKEFLAGS']="-j#{Hardware.processor_count}"
+    self['MAKEFLAGS']="-j#{Hardware.processor_count}"
 
     unless HOMEBREW_PREFIX.to_s == '/usr/local'
       # /usr/local is already an -isystem and -L directory so we skip it
-      ENV['CPPFLAGS'] = "-isystem #{HOMEBREW_PREFIX}/include"
-      ENV['LDFLAGS'] = "-L#{HOMEBREW_PREFIX}/lib"
+      self['CPPFLAGS'] = "-isystem #{HOMEBREW_PREFIX}/include"
+      self['LDFLAGS'] = "-L#{HOMEBREW_PREFIX}/lib"
       # CMake ignores the variables above
-      ENV['CMAKE_PREFIX_PATH'] = "#{HOMEBREW_PREFIX}"
+      self['CMAKE_PREFIX_PATH'] = "#{HOMEBREW_PREFIX}"
     end
 
-    if MACOS_VERSION >= 10.6 and (ENV['HOMEBREW_USE_LLVM'] or ARGV.include? '--use-llvm')
-      # you can install Xcode wherever you like you know.
-      prefix = `/usr/bin/xcode-select -print-path`.chomp
-      prefix = "/Developer" if prefix.to_s.empty?
-
-      ENV['CC'] = "#{prefix}/usr/bin/llvm-gcc"
-      ENV['CXX'] = "#{prefix}/usr/bin/llvm-g++"
-      cflags = %w{-O4} # link time optimisation baby!
+    if MACOS_VERSION >= 10.6 and (self['HOMEBREW_USE_LLVM'] or ARGV.include? '--use-llvm')
+      xcode_path = `/usr/bin/xcode-select -print-path`.chomp
+      xcode_path = "/Developer" if xcode_path.to_s.empty?
+      self['CC'] = "#{xcode_path}/usr/bin/llvm-gcc"
+      self['CXX'] = "#{xcode_path}/usr/bin/llvm-g++"
+      cflags = ['-O4'] # link time optimisation baby!
     else
+      # If these aren't set, many formulae fail to build
+      self['CC'] = '/usr/bin/cc'
+      self['CXX'] = '/usr/bin/c++'
       cflags = ['-O3']
     end
 
-    # in rare cases this may break your builds, as the tool for some reason wants
-    # to use a specific linker, however doing this in general causes formula to
+    # In rare cases this may break your builds, as the tool for some reason wants
+    # to use a specific linker. However doing this in general causes formula to
     # build more successfully because we are changing CC and many build systems
-    # don't react properly to that
-    ENV['LD'] = ENV['CC'] if ENV['CC']
+    # don't react properly to that.
+    self['LD'] = self['CC']
 
     # optimise all the way to eleven, references:
     # http://en.gentoo-wiki.com/wiki/Safe_Cflags/Intel
@@ -94,9 +69,9 @@ module HomebrewEnvExtension
       cflags<<"-mfpmath=sse"
     end
 
-    ENV['CFLAGS'] = ENV['CXXFLAGS'] = "#{cflags*' '} #{SAFE_CFLAGS_FLAGS}"
+    self['CFLAGS'] = self['CXXFLAGS'] = "#{cflags*' '} #{SAFE_CFLAGS_FLAGS}"
   end
-  
+
   def deparallelize
     remove 'MAKEFLAGS', /-j\d+/
   end
@@ -106,6 +81,11 @@ module HomebrewEnvExtension
   def fast
     remove_from_cflags /-O./
     append_to_cflags '-fast'
+  end
+  def O4
+    # LLVM link-time optimization
+    remove_from_cflags /-O./
+    append_to_cflags '-O4'
   end
   def O3
     # Sometimes O4 just takes fucking forever
@@ -128,7 +108,7 @@ module HomebrewEnvExtension
     self['CXX'] = '/usr/bin/g++-4.0'
     self.O3
     remove_from_cflags '-march=core2'
-    remove_from_cflags %r{-msse4(\.\d)?/}
+    remove_from_cflags %r{-msse4(\.\d)?}
   end
   alias_method :gcc_4_0, :gcc_4_0_1
 
@@ -138,6 +118,15 @@ module HomebrewEnvExtension
     self['CXX']="/usr/bin/g++-4.2"
     self['LD']=self['CC']
     self.O3
+  end
+
+  def llvm
+    xcode_path = `/usr/bin/xcode-select -print-path`.chomp
+    xcode_path = "/Developer" if xcode_path.to_s.empty?
+    self['CC'] = "#{xcode_path}/usr/bin/llvm-gcc"
+    self['CXX'] = "#{xcode_path}/usr/bin/llvm-g++"
+    self['LD'] = self['CC']
+    self.O4
   end
 
   def osx_10_4
@@ -152,18 +141,21 @@ module HomebrewEnvExtension
   end
 
   def minimal_optimization
-    self['CFLAGS']=self['CXXFLAGS']="-Os #{SAFE_CFLAGS_FLAGS}"
+    self['CFLAGS'] = self['CXXFLAGS'] = "-Os #{SAFE_CFLAGS_FLAGS}"
   end
   def no_optimization
-    self['CFLAGS']=self['CXXFLAGS'] = SAFE_CFLAGS_FLAGS
+    self['CFLAGS'] = self['CXXFLAGS'] = SAFE_CFLAGS_FLAGS
   end
 
   def libxml2
     append_to_cflags ' -I/usr/include/libxml2'
   end
+
   def x11
     opoo "You do not have X11 installed, this formula may not build." if not x11_installed?
-    
+
+    # There are some config scripts (e.g. freetype) here that should go in the path
+    prepend 'PATH', '/usr/X11/bin', ':'
     # CPPFLAGS are the C-PreProcessor flags, *not* C++!
     append 'CPPFLAGS', '-I/usr/X11R6/include'
     append 'LDFLAGS', '-L/usr/X11R6/lib'
@@ -171,37 +163,42 @@ module HomebrewEnvExtension
     append 'CMAKE_PREFIX_PATH', '/usr/X11R6', ':'
   end
   alias_method :libpng, :x11
+
   # we've seen some packages fail to build when warnings are disabled!
   def enable_warnings
     remove_from_cflags '-w'
   end
+
   # Snow Leopard defines an NCURSES value the opposite of most distros
   # See: http://bugs.python.org/issue6848
   def ncurses_define
     append 'CPPFLAGS', "-DNCURSES_OPAQUE=0"
   end
+
   # returns the compiler we're using
-  def cc
-    ENV['CC'] or "gcc"
-  end
-  def cxx
-    ENV['CXX'] or "g++"
-  end
+  def cc;  self['CC'] or "gcc";  end
+  def cxx; self['CXX'] or "g++"; end
+
+  # CFLAGS are read quite a bit
+  def cflags; ENV['CFLAGS']; end
 
   def m64
     append_to_cflags '-m64'
-    ENV.append 'LDFLAGS', '-arch x86_64'
+    append 'LDFLAGS', '-arch x86_64'
   end
   def m32
     append_to_cflags '-m32'
-    ENV.append 'LDFLAGS', '-arch i386'
+    append 'LDFLAGS', '-arch i386'
   end
 
   # i386 and x86_64 only, no PPC
   def universal_binary
     append_to_cflags '-arch i386 -arch x86_64'
-    ENV.O3 if self['CFLAGS'].include? '-O4' # O4 seems to cause the build to fail
-    ENV.append 'LDFLAGS', '-arch i386 -arch x86_64'
+    self.O3 if self['CFLAGS'].include? '-O4' # O4 seems to cause the build to fail
+    append 'LDFLAGS', '-arch i386 -arch x86_64'
+
+    # Can't mix "-march" for a 32-bit CPU  with "-arch x86_64"
+    remove_from_cflags(/-march=\S*/) if Hardware.is_32_bit?
   end
 
   def prepend key, value, separator = ' '
@@ -212,21 +209,22 @@ module HomebrewEnvExtension
     end
   end
   def append key, value, separator = ' '
-    ref=self[key]
+    ref = self[key]
     if ref.nil? or ref.empty?
-      self[key]=value
+      self[key] = value
     else
-      self[key]=ref + separator + value
+      self[key] = ref + separator + value
     end
   end
+
   def append_to_cflags f
     append 'CFLAGS', f
     append 'CXXFLAGS', f
   end
   def remove key, value
     return if self[key].nil?
-    self[key]=self[key].sub value, '' # can't use sub! on ENV
-    self[key]=nil if self[key].empty? # keep things clean
+    self[key] = self[key].sub value, '' # can't use sub! on ENV
+    self[key] = nil if self[key].empty? # keep things clean
   end
   def remove_from_cflags f
     remove 'CFLAGS', f

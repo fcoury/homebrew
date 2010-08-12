@@ -1,13 +1,18 @@
 require 'formula'
 
 class GitManuals < Formula
-  url 'http://kernel.org/pub/software/scm/git/git-manpages-1.7.0.tar.bz2'
-  md5 '1bb3b0ab6c6129d61455b0e2e7104cc8'
+  url 'http://kernel.org/pub/software/scm/git/git-manpages-1.7.2.1.tar.bz2'
+  md5 'a11073658ea600c2507337885728851a'
+end
+
+class GitHtmldocs < Formula
+  url 'http://kernel.org/pub/software/scm/git/git-htmldocs-1.7.2.1.tar.bz2'
+  md5 'ef85458fea2f0e894382b5bbed7d9625'
 end
 
 class Git < Formula
-  url 'http://kernel.org/pub/software/scm/git/git-1.7.0.tar.bz2'
-  md5 'c7553b73e2156d187ece6ba936ae30ab'
+  url 'http://kernel.org/pub/software/scm/git/git-1.7.2.1.tar.bz2'
+  md5 '24a443a120a0ab372185cb6bc0dbd934'
   homepage 'http://git-scm.com'
 
   def install
@@ -16,11 +21,20 @@ class Git < Formula
     ENV['NO_DARWIN_PORTS']='1'
     # If local::lib is used you get a 'Only one of PREFIX or INSTALL_BASE can be given' error
     ENV['PERL_MM_OPT']='';
+    # build verbosely so we can debug better
+    ENV['V']='1'
+
+    inreplace "Makefile" do |s|
+      s.remove_make_var! %w{CFLAGS LDFLAGS}
+    end
 
     system "make", "prefix=#{prefix}", "install"
 
     # Install the git bash completion file
     (etc+'bash_completion.d').install 'contrib/completion/git-completion.bash'
+
+    # Install git-p4
+    bin.install 'contrib/fast-import/git-p4'
 
     # these files are exact copies of the git binary, so like the contents
     # of libexec/git-core lets hard link them
@@ -36,5 +50,6 @@ class Git < Formula
     # we could build the manpages ourselves, but the build process depends
     # on many other packages, and is somewhat crazy, this way is easier
     GitManuals.new.brew { man.install Dir['*'] }
+    GitHtmldocs.new.brew { (share+'doc/git-doc').install Dir['*'] }
   end
 end
